@@ -32,14 +32,27 @@ const std::regex sipAddRegex(".*(sips?):([^@]+)(?:@([0-9.]+)):?([0-9]{0,5})?.*")
 char proxy_module_name[] = "stateful-proxy-module";
 char logger_module_name[] = "logger";
 
-//static insertAccount(pjsip_uri* contact)
-//{
-//	pjsip_sip_uri* aa = (pjsip_sip_uri*)receivedData->msg_info.from->uri;
-//	pjsip_uri* address = (pjsip_uri*)pjsip_uri_clone(global.pool, contact->uri);
-//
-//
-//	global.registrar.push_back(Account(address, receivedData->pkt_info.src_port, receivedData->pkt_info.src_name));
-//}
+static void insertAccount(pjsip_uri* contact, unsigned short port, std::string name)
+{
+	try
+	{
+		for (size_t i = 0; i < global.registrar.size(); ++i)
+		{
+			//if the account already exists
+			if (global.registrar.at(i).isEqual(contact)) return;
+		}
+
+		pjsip_uri* address = (pjsip_uri*)pjsip_uri_clone(global.pool, contact);
+		if (address)
+		{
+			global.registrar.push_back(Account(address, port, name));
+		}
+	}
+	catch (std::exception& err)
+	{
+		std::cerr << err.what() << std::endl;
+	}
+}
 
 static pjsip_uri* get_acc_uri(pjsip_sip_uri* dest)
 {
@@ -70,10 +83,10 @@ static pjsip_uri* get_acc_uri(pjsip_sip_uri* dest)
 		sipAddr = std::string{ buf };
 		if (std::regex_match(sipAddr, regexMatches, sipAddRegex))
 		{
-			//2. match [sip / sips]
-			//3. match [user]
-			//4. match [ip] (optional)
-			//5. match [port] (optional)
+			//1. match [sip / sips]
+			//2. match [user]
+			//3. match [ip] (optional)
+			//4. match [port] (optional)
 			if (regexMatches.size() >= 2)
 			{
 				std::ssub_match submatch = regexMatches[2];
@@ -108,18 +121,17 @@ struct uas_data
 	pjsip_transaction* uac_tsx;
 };
 
-static pj_bool_t onRequestReceive(pjsip_rx_data* receivedData)
+static pj_bool_t onRequestReceive(pjsip_rx_data* rdata)
 {
-	pjsip_transaction* uas_transaction, * uac_transaction;
+	pjsip_transaction* uas_tsx, * uac_tsx;
 	struct uac_data *uac_data;
 	struct uas_data *uas_data;
-	pjsip_tx_data* transaction_data = nullptr;
+	pjsip_tx_data* tdata = nullptr;
 	pj_status_t status = 0;
 	pj_str_t branch;
-	
+	/*
 	proxy_verify_request(receivedData);
 	//STATELESS
-
 	if (receivedData->msg_info.msg->line.req.method.id == PJSIP_REGISTER_METHOD)
 	{
 		//UA REGISTRATION
@@ -127,15 +139,8 @@ static pj_bool_t onRequestReceive(pjsip_rx_data* receivedData)
 		pj_str_t custom_code = { description, 8 };
 		status = pjsip_endpt_create_response(global.endpt, receivedData, 200, &custom_code, &transaction_data);
 		pjsip_contact_hdr* contact = (pjsip_contact_hdr*)pjsip_msg_find_hdr(receivedData->msg_info.msg, PJSIP_H_CONTACT, nullptr);
-		
-		pjsip_sip_uri* aa = (pjsip_sip_uri*) receivedData->msg_info.from->uri;
-		pjsip_uri* address = (pjsip_uri*)pjsip_uri_clone(global.pool, contact->uri);
-
-
-		global.registrar.push_back(Account( address, receivedData->pkt_info.src_port, receivedData->pkt_info.src_name ));
-		
+		insertAccount(contact->uri, receivedData->pkt_info.src_port, receivedData->pkt_info.src_name);
 		pjsip_endpt_send_response2(global.endpt, receivedData, transaction_data, nullptr, nullptr);
-		//pjsip_endpt_respond(global.endpt, nullptr, receivedData, 200, &a, nullptr, nullptr, nullptr);
 		return PJ_TRUE;
 	}
 
@@ -151,81 +156,209 @@ static pj_bool_t onRequestReceive(pjsip_rx_data* receivedData)
 		}
 		return PJ_FALSE;
 	}
-	char buf[800];
-	int len;
-	len = pjsip_uri_print(PJSIP_URI_IN_CONTACT_HDR, dest, buf, sizeof(buf) - 1);
 	branch = pjsip_calculate_branch_id(receivedData);
 	status = pjsip_endpt_create_request_fwd(global.endpt, receivedData, dest, &branch, 0, &transaction_data);
-	pjsip_host_info info;
-	status = pjsip_get_request_dest(transaction_data, &info);
+	proxy_calculate_target(receivedData, transaction_data);
+	
 	status = pjsip_endpt_send_request_stateless(global.endpt, transaction_data, nullptr, nullptr);
-	//status = pjsip_tsx_create_uas(global.endpt, nullptr, receivedData, &uas_transaction);
+	//pjsip_endpt_send_request(global.endpt, transaction_data, -1, nullptr, nullptr);
+	if (receivedData->msg_info.msg->line.req.method.id == PJSIP_INVITE_METHOD) {
+		pjsip_tx_data* res100;
 
+		//pjsip_endpt_create_response(global.endpt, receivedData, 100, NULL, &res100);
+		//pjsip_tsx_send_msg(uas_transaction, res100);
+		//pjsip_endpt_respond_stateless(global.endpt, receivedData, 100, nullptr);
+	}
+	*/
 
-
-
-
-
-	return PJ_TRUE;
-	
-	
-	
-	////////////////////////////////////////ENDSTATESLESS/////////////////////////////////////
-	
-	
-	
-	
-	
-	
-	
-	
-	
-	
-	status |= proxy_process_routing(transaction_data);
-	status = proxy_calculate_target(receivedData, transaction_data);
-	if (status)
+	if (rdata->msg_info.msg->line.req.method.id == PJSIP_REGISTER_METHOD)
 	{
+		//UA REGISTRATION
+		char description[] = "VYBAVENE";
+		pj_str_t custom_code = { description, 8 };
+		status = pjsip_endpt_create_response(global.endpt, rdata, 200, &custom_code, &tdata);
+		pjsip_contact_hdr* contact = (pjsip_contact_hdr*)pjsip_msg_find_hdr(rdata->msg_info.msg, PJSIP_H_CONTACT, nullptr);
+		insertAccount(contact->uri, rdata->pkt_info.src_port, rdata->pkt_info.src_name);
+		pjsip_endpt_send_response2(global.endpt, rdata, tdata, nullptr, nullptr);
 		return PJ_TRUE;
 	}
-	if (transaction_data->msg->line.req.method.id == PJSIP_ACK_METHOD) {
-		status = pjsip_endpt_send_request_stateless(global.endpt, transaction_data,
-			NULL, NULL);
+
+	if (rdata->msg_info.msg->line.req.method.id != PJSIP_CANCEL_METHOD) {
+
+		/* Verify incoming request */
+		status = proxy_verify_request(rdata);
+		pjsip_uri* dest = get_acc_uri((pjsip_sip_uri*)rdata->msg_info.to->uri);
+		if (status != PJ_SUCCESS || dest == nullptr) {
+			
+			return PJ_TRUE;
+		}
+
+		/*
+		 * Request looks sane, next clone the request to create transmit data.
+		 */
+		status = pjsip_endpt_create_request_fwd(global.endpt, rdata, dest,
+			NULL, 0, &tdata);
+		if (status != PJ_SUCCESS) {
+			pjsip_endpt_respond_stateless(global.endpt, rdata,
+				PJSIP_SC_INTERNAL_SERVER_ERROR,
+				NULL, NULL, NULL);
+			return PJ_TRUE;
+		}
+
+
+		/* Process routing */
+		//status = proxy_process_routing(tdata);
 		if (status != PJ_SUCCESS) {
 			
 			return PJ_TRUE;
 		}
 
-		return PJ_TRUE;
+		/* Calculate target */
+		//status = proxy_calculate_target(rdata, tdata);
+		if (status != PJ_SUCCESS) {
+			
+			return PJ_TRUE;
+		}
+
+		/* Everything is set to forward the request. */
+
+		/* If this is an ACK request, forward statelessly.
+		 * This happens if the proxy records route and this ACK
+		 * is sent for 2xx response. An ACK that is sent for non-2xx
+		 * final response will be absorbed by transaction layer, and
+		 * it will not be received by on_rx_request() callback.
+		 */
+		if (tdata->msg->line.req.method.id == PJSIP_ACK_METHOD) {
+			status = pjsip_endpt_send_request_stateless(global.endpt, tdata,
+				NULL, NULL);
+			if (status != PJ_SUCCESS) {
+				
+				return PJ_TRUE;
+			}
+
+			return PJ_TRUE;
+		}
+
+		/* Create UAC transaction for forwarding the request.
+		 * Set our module as the transaction user to receive further
+		 * events from this transaction.
+		 */
+		status = pjsip_tsx_create_uac(&mod_tu, tdata, &uac_tsx);
+		if (status != PJ_SUCCESS) {
+			pjsip_tx_data_dec_ref(tdata);
+			pjsip_endpt_respond_stateless(global.endpt, rdata,
+				PJSIP_SC_INTERNAL_SERVER_ERROR,
+				NULL, NULL, NULL);
+			return PJ_TRUE;
+		}
+
+		/* Create UAS transaction to handle incoming request */
+		status = pjsip_tsx_create_uas(&mod_tu, rdata, &uas_tsx);
+		if (status != PJ_SUCCESS) {
+			pjsip_tx_data_dec_ref(tdata);
+			pjsip_endpt_respond_stateless(global.endpt, rdata,
+				PJSIP_SC_INTERNAL_SERVER_ERROR,
+				NULL, NULL, NULL);
+			pjsip_tsx_terminate(uac_tsx, PJSIP_SC_INTERNAL_SERVER_ERROR);
+			return PJ_TRUE;
+		}
+
+		/* Feed the request to the UAS transaction to drive it's state
+		 * out of NULL state.
+		 */
+		pjsip_tsx_recv_msg(uas_tsx, rdata);
+
+		/* Attach a data to the UAC transaction, to be used to find the
+		 * UAS transaction when we receive response in the UAC side.
+		 */
+		uac_data = (struct uac_data*)
+			pj_pool_alloc(uac_tsx->pool, sizeof(struct uac_data));
+		uac_data->uas_tsx = uas_tsx;
+		uac_tsx->mod_data[mod_tu.id] = (void*)uac_data;
+
+		/* Attach data to the UAS transaction, to find the UAC transaction
+		 * when cancelling INVITE request.
+		 */
+		uas_data = (struct uas_data*)
+			pj_pool_alloc(uas_tsx->pool, sizeof(struct uas_data));
+		uas_data->uac_tsx = uac_tsx;
+		uas_tsx->mod_data[mod_tu.id] = (void*)uas_data;
+
+		/* Everything is setup, forward the request */
+		status = pjsip_tsx_send_msg(uac_tsx, tdata);
+		if (status != PJ_SUCCESS) {
+			pjsip_tx_data* err_res;
+
+			/* Fail to send request, for some reason */
+
+			/* Destroy transmit data */
+			pjsip_tx_data_dec_ref(tdata);
+
+			/* I think UAC transaction should have been destroyed when
+			 * it fails to send request, so no need to destroy it.
+			pjsip_tsx_terminate(uac_tsx, PJSIP_SC_INTERNAL_SERVER_ERROR);
+			 */
+
+			 /* Send 500/Internal Server Error to UAS transaction */
+			pjsip_endpt_create_response(global.endpt, rdata,
+				500, NULL, &err_res);
+			pjsip_tsx_send_msg(uas_tsx, err_res);
+
+			return PJ_TRUE;
+		}
+
+		/* Send 100/Trying if this is an INVITE */
+		if (rdata->msg_info.msg->line.req.method.id == PJSIP_INVITE_METHOD) {
+			pjsip_tx_data* res100;
+
+			pjsip_endpt_create_response(global.endpt, rdata, 100, NULL,
+				&res100);
+			pjsip_tsx_send_msg(uas_tsx, res100);
+		}
+
 	}
-	
-	status = pjsip_tsx_create_uac(&mod_tu, transaction_data, &uac_transaction);
-	status = pjsip_tsx_create_uas(&mod_tu, receivedData, &uas_transaction);
-	pjsip_tsx_recv_msg(uas_transaction, receivedData);
-	uac_data = (struct uac_data*)
-		pj_pool_alloc(uac_transaction->pool, sizeof(struct uac_data));
-	uac_data->uas_tsx = uas_transaction;
-	uac_transaction->mod_data[mod_tu.id] = (void*)uac_data;
-	/* Attach data to the UAS transaction, to find the UAC transaction
-	 * when cancelling INVITE request.
-	 */
-	uas_data = (struct uas_data*)
-		pj_pool_alloc(uas_transaction->pool, sizeof(struct uas_data));
-	uas_data->uac_tsx = uac_transaction;
-	uas_transaction->mod_data[mod_tu.id] = (void*)uas_data;
+	else {
+		/* This is CANCEL request */
+		pjsip_transaction* invite_uas;
+		struct uas_data* uas_data2;
+		pj_str_t key;
 
-	/* Everything is setup, forward the request */
-	status = pjsip_tsx_send_msg(uac_transaction, transaction_data);
-	
-	/* Send 100/Trying if this is an INVITE */
-	if (receivedData->msg_info.msg->line.req.method.id == PJSIP_INVITE_METHOD) {
-		pjsip_tx_data* res100;
+		/* Find the UAS INVITE transaction */
+		pjsip_tsx_create_key(rdata->tp_info.pool, &key, PJSIP_UAS_ROLE,
+			pjsip_get_invite_method(), rdata);
+		invite_uas = pjsip_tsx_layer_find_tsx(&key, PJ_TRUE);
+		if (!invite_uas) {
+			/* Invite transaction not found, respond CANCEL with 481 */
+			pjsip_endpt_respond_stateless(global.endpt, rdata, 481, NULL,
+				NULL, NULL);
+			return PJ_TRUE;
+		}
 
-		pjsip_endpt_create_response(global.endpt, receivedData, 100, NULL,
-			&res100);
-		pjsip_tsx_send_msg(uas_transaction, res100);
+		/* Respond 200 OK to CANCEL */
+		pjsip_endpt_respond(global.endpt, NULL, rdata, 200, NULL, NULL,
+			NULL, NULL);
+
+		/* Send CANCEL to cancel the UAC transaction.
+		 * The UAS INVITE transaction will get final response when
+		 * we receive final response from the UAC INVITE transaction.
+		 */
+		uas_data2 = (struct uas_data*)invite_uas->mod_data[mod_tu.id];
+		if (uas_data2->uac_tsx && uas_data2->uac_tsx->status_code < 200) {
+			pjsip_tx_data* cancel;
+
+			pj_grp_lock_acquire(uas_data2->uac_tsx->grp_lock);
+
+			pjsip_endpt_create_cancel(global.endpt, uas_data2->uac_tsx->last_tx,
+				&cancel);
+			pjsip_endpt_send_request(global.endpt, cancel, -1, NULL, NULL);
+
+			pj_grp_lock_release(uas_data2->uac_tsx->grp_lock);
+		}
+
+		/* Unlock UAS tsx because it is locked in find_tsx() */
+		pj_grp_lock_release(invite_uas->grp_lock);
 	}
 
-	std::cout << "nieco doslo" << std::endl;
 	return PJ_TRUE;
 }
 
@@ -333,7 +466,7 @@ ProxyServer::ProxyServer()
 
 	//Initialize stateful proxy
 	status |= pjsip_endpt_register_module(global.endpt, &stateful_proxy_module);
-	//status |= pjsip_endpt_register_module(global.endpt, &)
+	status |= pjsip_endpt_register_module(global.endpt, &mod_tu);
 
 	PJ_LOG(3, (THIS_FILE, "Proxy started, listening on port %d", global.port));
 	PJ_LOG(3, (THIS_FILE, "Local host aliases:"));
@@ -471,7 +604,7 @@ static pj_status_t proxy_calculate_target(pjsip_rx_data* rdata,
 	pjsip_tx_data* tdata)
 {
 	pjsip_sip_uri* target;
-	proxy_postprocess(tdata);
+	
 	/* RFC 3261 Section 16.5 Determining Request Targets */
 
 	target = (pjsip_sip_uri*)tdata->msg->line.req.uri;
@@ -495,7 +628,8 @@ static pj_status_t proxy_calculate_target(pjsip_rx_data* rdata,
 		proxy_postprocess(tdata);
 		return PJ_SUCCESS;
 	}
-	
+	proxy_postprocess(tdata);
+	return PJ_SUCCESS;
 	/* If the target set for the request has not been predetermined as
 	 * described above, this implies that the element is responsible for the
 	 * domain in the Request-URI, and the element MAY use whatever mechanism

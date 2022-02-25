@@ -20,7 +20,6 @@ public:
 		this->port = port;
 		this->ip = ip;
 		this->contact = std::string{ ((pjsip_sip_uri*)uri)->host.ptr, static_cast<size_t>(((pjsip_sip_uri*)uri)->host.slen) };
-		//is->name = std::string{ name.ptr , static_cast<unsigned int>(name.slen) };
 	}
 
 	pjsip_uri* destination = nullptr;
