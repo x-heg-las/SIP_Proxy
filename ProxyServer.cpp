@@ -137,12 +137,14 @@ static pj_bool_t onRequestReceive(pjsip_rx_data* rdata)
 		pj_str_t custom_code = { description, 8 };
 		status = pjsip_endpt_create_response(global.endpt, rdata, 200, &custom_code, &tdata);
 		pjsip_contact_hdr* contact = (pjsip_contact_hdr*)pjsip_msg_find_hdr(rdata->msg_info.msg, PJSIP_H_CONTACT, nullptr);
+		//Adding binding
 		pjsip_msg_add_hdr(tdata->msg, (pjsip_hdr*) contact);
-		char uria[] = "<sip:147.175.191.210:5060;lr>";
+		//char uria[] = "<sip:147.175.191.210:5060;lr>";
 		std::string rrip = getRecordRoute();
 		pjsip_rr_hdr* rrhdr = pjsip_rr_hdr_create(global.pool);
 		pjsip_uri* lruri = pjsip_parse_uri(global.pool, (char*)rrip.c_str(), rrip.length(), 0);
 		rrhdr->name_addr.uri = lruri;
+		//Adding record route header
 		pjsip_msg_add_hdr(tdata->msg, (pjsip_hdr*)rrhdr);
 		insertAccount(contact->uri, rdata->pkt_info.src_port, rdata->pkt_info.src_name);
 		pjsip_endpt_send_response2(global.endpt, rdata, tdata, nullptr, nullptr);
@@ -171,7 +173,7 @@ static pj_bool_t onRequestReceive(pjsip_rx_data* rdata)
 			return PJ_TRUE;
 		}
 
-		char uria[] = "<sip:147.175.191.210:5060;lr>";
+		//char uria[] = "<sip:147.175.191.210:5060;lr>";
 
 		std::string rrip = getRecordRoute();
 		pjsip_rr_hdr* rrhdr = pjsip_rr_hdr_create(global.pool);
@@ -267,10 +269,6 @@ static pj_bool_t onRequestReceive(pjsip_rx_data* rdata)
 			/* Destroy transmit data */
 			pjsip_tx_data_dec_ref(tdata);
 
-			/* I think UAC transaction should have been destroyed when
-			 * it fails to send request, so no need to destroy it.
-			pjsip_tsx_terminate(uac_tsx, PJSIP_SC_INTERNAL_SERVER_ERROR);
-			 */
 
 			 /* Send 500/Internal Server Error to UAS transaction */
 			pjsip_endpt_create_response(global.endpt, rdata,
@@ -311,10 +309,6 @@ static pj_bool_t onRequestReceive(pjsip_rx_data* rdata)
 		pjsip_endpt_respond(global.endpt, NULL, rdata, 200, NULL, NULL,
 			NULL, NULL);
 
-		/* Send CANCEL to cancel the UAC transaction.
-		 * The UAS INVITE transaction will get final response when
-		 * we receive final response from the UAC INVITE transaction.
-		 */
 		uas_data2 = (struct uas_data*)invite_uas->mod_data[mod_tu.id];
 		if (uas_data2->uac_tsx && uas_data2->uac_tsx->status_code < 200) {
 			pjsip_tx_data* cancel;
@@ -518,27 +512,6 @@ pj_status_t ProxyServer::initProxy()
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 ProxyServer::~ProxyServer()
 {
 	pjsip_endpt_destroy(global.endpt);
@@ -555,15 +528,12 @@ pj_status_t ProxyServer::initOptions()
 	return PJ_SUCCESS;
 }
 
-
-
-
-/////////////////////////
+//Inserts rr header
 
 static void proxy_postprocess(pjsip_tx_data* tdata)
 {
 	/* Optionally record-route */ 
-	if (1) {
+	if (1) { //always
 		char uribuf[128];
 		pj_str_t uri;
 		char rrr[] = "Record-Route";
@@ -611,15 +581,7 @@ static pj_status_t proxy_calculate_target(pjsip_rx_data* rdata,
 	}
 	proxy_postprocess(tdata);
 	return PJ_SUCCESS;
-	/* If the target set for the request has not been predetermined as
-	 * described above, this implies that the element is responsible for the
-	 * domain in the Request-URI, and the element MAY use whatever mechanism
-	 * it desires to determine where to send the request.
-	 */
-
-	 /* We're not interested to receive request destined to us, so
-	  * respond with 404/Not Found (only if request is not ACK!).
-	  */
+	
 	if (rdata->msg_info.msg->line.req.method.id != PJSIP_ACK_METHOD) {
 		pjsip_endpt_respond_stateless(global.endpt, rdata,
 			PJSIP_SC_NOT_FOUND, NULL,
@@ -631,7 +593,6 @@ static pj_status_t proxy_calculate_target(pjsip_rx_data* rdata,
 
 	return PJSIP_ERRNO_FROM_SIP_STATUS(PJSIP_SC_NOT_FOUND);
 }
-
 
 static pj_bool_t is_uri_local(const pjsip_sip_uri* uri)
 {
@@ -793,7 +754,7 @@ static void tu_on_tsx_state(pjsip_transaction* tsx, pjsip_event* event)
 			
 			return;
 		}
-		char uria[] = "<sip:147.175.191.210:5060;lr>";
+		//char uria[] = "<sip:147.175.191.210:5060;lr>";
 		std::string rrip = getRecordRoute();
 		pjsip_rr_hdr* rrhdr = pjsip_rr_hdr_create(global.pool);
 		pjsip_uri* lruri = pjsip_parse_uri(global.pool, (char*)rrip.c_str(), rrip.length(), 0);

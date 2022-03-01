@@ -156,8 +156,6 @@ static pj_status_t incomming_logger(pjsip_rx_data *rdata) {
 	}
 }
 
-// [DELETE] static pj_status_t outgoing_logger(pjsip_tx_data *tdata) {}
-
 //LOGGER MODULE
 static char logger_mod_name[] = "logger";
 static pjsip_module logger =
