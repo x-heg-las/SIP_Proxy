@@ -5,8 +5,11 @@
 #include <pjsip_ua.h>
 #include <iostream>
 #include <vector>
+#include <fstream>
 #include <string>
+#include <iomanip>
 #include <regex>
+#include <ctime>
 
 struct global_struct;
 
@@ -66,7 +69,6 @@ public:
 	pj_status_t initOptions();
 private:
 	pj_status_t initProxy();
-	static int worker_thread(void* ptr);
 };
 
 /* Proxy utility to verify incoming requests.
@@ -77,26 +79,6 @@ static pj_status_t proxy_verify_request(pjsip_rx_data* rdata)
 	char text[] = "Proxy-Require";
 	const pj_str_t STR_PROXY_REQUIRE = { text, 13 };
 
-	/* RFC 3261 Section 16.3 Request Validation */
-
-	/* Before an element can proxy a request, it MUST verify the message's
-	 * validity.  A valid message must pass the following checks:
-	 *
-	 * 1. Reasonable Syntax
-	 * 2. URI scheme
-	 * 3. Max-Forwards
-	 * 4. (Optional) Loop Detection
-	 * 5. Proxy-Require
-	 * 6. Proxy-Authorization
-	 */
-
-	 /* 1. Reasonable Syntax.
-	  * This would have been checked by transport layer.
-	  */
-
-	  /* 2. URI scheme.
-	   * We only want to support "sip:"/"sips:" URI scheme for this simple proxy.
-	   */
 	if (!PJSIP_URI_SCHEME_IS_SIP(rdata->msg_info.msg->line.req.uri) &&
 		!PJSIP_URI_SCHEME_IS_SIPS(rdata->msg_info.msg->line.req.uri))
 	{
@@ -106,9 +88,6 @@ static pj_status_t proxy_verify_request(pjsip_rx_data* rdata)
 		return PJSIP_ERRNO_FROM_SIP_STATUS(PJSIP_SC_UNSUPPORTED_URI_SCHEME);
 	}
 
-	/* 3. Max-Forwards.
-	 * Send error if Max-Forwards is 1 or lower.
-	 */
 	if (rdata->msg_info.max_fwd && rdata->msg_info.max_fwd->ivalue <= 1) {
 		pjsip_endpt_respond_stateless(global.endpt, rdata,
 			PJSIP_SC_TOO_MANY_HOPS, NULL,
@@ -116,11 +95,6 @@ static pj_status_t proxy_verify_request(pjsip_rx_data* rdata)
 		return PJSIP_ERRNO_FROM_SIP_STATUS(PJSIP_SC_TOO_MANY_HOPS);
 	}
 
-	/* 4. (Optional) Loop Detection.
-	 * Nah, we don't do that with this simple proxy.
-	 */
-
-	 /* 5. Proxy-Require */
 	if (pjsip_msg_find_hdr_by_name(rdata->msg_info.msg, &STR_PROXY_REQUIRE,
 		NULL) != NULL)
 	{
@@ -130,9 +104,75 @@ static pj_status_t proxy_verify_request(pjsip_rx_data* rdata)
 		return PJSIP_ERRNO_FROM_SIP_STATUS(PJSIP_SC_BAD_EXTENSION);
 	}
 
-	/* 6. Proxy-Authorization.
-	 * Nah, we don't require any authorization with this sample.
-	 */
-
 	return PJ_SUCCESS;
 }
+
+static pj_status_t incomming_logger(pjsip_rx_data *rdata) {
+	//log file
+	try
+	{
+		std::ofstream log_file("voip_log.txt", std::ios_base::app);
+
+		if (log_file.is_open() && log_file.good())
+		{
+			std::string from{ "undefined" };
+			std::string to{ "undefined" };
+			char buffer[1300];
+			int len = pjsip_uri_print(PJSIP_URI_IN_FROMTO_HDR, rdata->msg_info.from->uri, buffer, sizeof(buffer) - 1);
+			buffer[len] = '\0';
+			if (len > 0)
+			{
+				from = std::string{ buffer, static_cast<unsigned>(len) };
+			}
+			auto cur_time = std::time(nullptr);
+			len = pjsip_uri_print(PJSIP_URI_IN_FROMTO_HDR, rdata->msg_info.to->uri, buffer, sizeof(buffer) - 1);
+			if (len > 0)
+			{
+				to = std::string{ buffer, static_cast<unsigned>(len) };
+			}
+
+			std::string id{ rdata->msg_info.cid->id.ptr , static_cast<size_t>(rdata->msg_info.cid->id.slen) };
+
+			if (rdata->msg_info.msg->line.req.method.id == PJSIP_INVITE_METHOD)
+			{
+				log_file << std::put_time(std::localtime(&cur_time), "%y-%m-%d %OH:%OM:%OS") << " [INVITE] {ID: " + id + " } Calling : " + from + " ------> " + to << std::endl;
+				log_file.flush();
+				return PJ_FALSE;
+			}
+
+			if (rdata->msg_info.msg->line.req.method.id == PJSIP_BYE_METHOD)
+			{
+				log_file << std::put_time(std::localtime(&cur_time), "%y-%m-%d %OH:%OM:%OS") << " [BYE] {ID: " + id + " } Call ended by : " + from << std::endl;
+				log_file.flush();
+				return PJ_FALSE;
+			}
+		}
+		return PJ_FALSE;
+	}
+	catch (std::exception& err)
+	{
+		std::cerr << err.what() << std::endl;
+		return PJ_FALSE;
+	}
+}
+
+// [DELETE] static pj_status_t outgoing_logger(pjsip_tx_data *tdata) {}
+
+//LOGGER MODULE
+static char logger_mod_name[] = "logger";
+static pjsip_module logger =
+{
+	nullptr, nullptr,
+	{logger_mod_name, 6},
+	-1,
+	PJSIP_MOD_PRIORITY_TRANSPORT_LAYER -1,
+	nullptr,
+	nullptr,
+	nullptr,
+	nullptr,
+	&incomming_logger,
+	&incomming_logger,
+	nullptr,
+	nullptr,
+	nullptr,
+};

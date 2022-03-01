@@ -90,6 +90,7 @@
       <ConformanceMode>true</ConformanceMode>
       <AdditionalIncludeDirectories>D:\patoh\Pracovná plocha\MTAA\Zadanie1\pjproject-2.11.1\lib;D:\patoh\Pracovná plocha\MTAA\Zadanie1\pjproject-2.11.1\pjlib\include;D:\patoh\Pracovná plocha\MTAA\Zadanie1\pjproject-2.11.1\pjlib-util\include;D:\patoh\Pracovná plocha\MTAA\Zadanie1\pjproject-2.11.1\pjnath\include;D:\patoh\Pracovná plocha\MTAA\Zadanie1\pjproject-2.11.1\pjmedia\include;D:\patoh\Pracovná plocha\MTAA\Zadanie1\pjproject-2.11.1\pjsip\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
+      <LanguageStandard>Default</LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>

@@ -3,7 +3,12 @@
 char transaction_module_name[] = "transaction-module";
 static void tu_on_tsx_state(pjsip_transaction* tsx, pjsip_event* event);
 
-
+static std::string getRecordRoute()
+{
+	std::string ip{ global.name[0].host.ptr, static_cast<size_t>(global.name[0].host.slen) };
+	int port = global.name[0].port;
+	return "<sip:" + ip + ":" + std::to_string(port) + ";lr>";
+}
 
 static pjsip_module mod_tu =
 {
@@ -22,7 +27,7 @@ static pjsip_module mod_tu =
 	&tu_on_tsx_state,			/* on_tsx_state()	*/
 };
 
-
+static pj_bool_t onRequestResponse(pjsip_rx_data* rdata);
 static pj_bool_t is_uri_local(const pjsip_sip_uri* uri);
 static pj_status_t proxy_calculate_target(pjsip_rx_data* rdata, pjsip_tx_data* tdata);
 static void proxy_postprocess(pjsip_tx_data* tdata);
@@ -30,7 +35,6 @@ static pj_status_t proxy_process_routing(pjsip_tx_data* tdata);
 
 const std::regex sipAddRegex(".*(sips?):([^@]+)(?:@([0-9.]+)):?([0-9]{0,5})?.*");
 char proxy_module_name[] = "stateful-proxy-module";
-char logger_module_name[] = "logger";
 
 static void insertAccount(pjsip_uri* contact, unsigned short port, std::string name)
 {
@@ -62,8 +66,6 @@ static pjsip_uri* get_acc_uri(pjsip_sip_uri* dest)
 	{
 		char buf[800];
 		int len;
-		
-		
 		if (acc.isEqual(contact))
 		{
 			len = pjsip_uri_print(PJSIP_URI_IN_FROMTO_HDR, acc.destination, buf, sizeof(buf) - 1);
@@ -114,8 +116,6 @@ struct uac_data
 	pj_timer_entry	 timer;
 };
 
-
-/* This is the data that is attached to the UAS transaction */
 struct uas_data
 {
 	pjsip_transaction* uac_tsx;
@@ -128,48 +128,7 @@ static pj_bool_t onRequestReceive(pjsip_rx_data* rdata)
 	struct uas_data *uas_data;
 	pjsip_tx_data* tdata = nullptr;
 	pj_status_t status = 0;
-	pj_str_t branch;
-	/*
-	proxy_verify_request(receivedData);
-	//STATELESS
-	if (receivedData->msg_info.msg->line.req.method.id == PJSIP_REGISTER_METHOD)
-	{
-		//UA REGISTRATION
-		char description[] = "VYBAVENE";
-		pj_str_t custom_code = { description, 8 };
-		status = pjsip_endpt_create_response(global.endpt, receivedData, 200, &custom_code, &transaction_data);
-		pjsip_contact_hdr* contact = (pjsip_contact_hdr*)pjsip_msg_find_hdr(receivedData->msg_info.msg, PJSIP_H_CONTACT, nullptr);
-		insertAccount(contact->uri, receivedData->pkt_info.src_port, receivedData->pkt_info.src_name);
-		pjsip_endpt_send_response2(global.endpt, receivedData, transaction_data, nullptr, nullptr);
-		return PJ_TRUE;
-	}
-
-	pjsip_uri* dest = get_acc_uri((pjsip_sip_uri*)receivedData->msg_info.to->uri);
-	if (dest == nullptr)
-	{
-		char buf[800];
-		int len;
-		len = pjsip_uri_print(PJSIP_URI_IN_OTHER, (pjsip_sip_uri*)receivedData->msg_info.to->uri, buf, sizeof(buf) - 1);
-		buf[len] = '/0';
-		if (receivedData->msg_info.msg->line.req.method.id != PJSIP_ACK_METHOD) {
-			pjsip_endpt_respond_stateless(global.endpt, receivedData, PJSIP_SC_NOT_FOUND, NULL, NULL, NULL);
-		}
-		return PJ_FALSE;
-	}
-	branch = pjsip_calculate_branch_id(receivedData);
-	status = pjsip_endpt_create_request_fwd(global.endpt, receivedData, dest, &branch, 0, &transaction_data);
-	proxy_calculate_target(receivedData, transaction_data);
-	
-	status = pjsip_endpt_send_request_stateless(global.endpt, transaction_data, nullptr, nullptr);
-	//pjsip_endpt_send_request(global.endpt, transaction_data, -1, nullptr, nullptr);
-	if (receivedData->msg_info.msg->line.req.method.id == PJSIP_INVITE_METHOD) {
-		pjsip_tx_data* res100;
-
-		//pjsip_endpt_create_response(global.endpt, receivedData, 100, NULL, &res100);
-		//pjsip_tsx_send_msg(uas_transaction, res100);
-		//pjsip_endpt_respond_stateless(global.endpt, receivedData, 100, nullptr);
-	}
-	*/
+	pj_str_t branch{};
 
 	if (rdata->msg_info.msg->line.req.method.id == PJSIP_REGISTER_METHOD)
 	{
@@ -178,6 +137,13 @@ static pj_bool_t onRequestReceive(pjsip_rx_data* rdata)
 		pj_str_t custom_code = { description, 8 };
 		status = pjsip_endpt_create_response(global.endpt, rdata, 200, &custom_code, &tdata);
 		pjsip_contact_hdr* contact = (pjsip_contact_hdr*)pjsip_msg_find_hdr(rdata->msg_info.msg, PJSIP_H_CONTACT, nullptr);
+		pjsip_msg_add_hdr(tdata->msg, (pjsip_hdr*) contact);
+		char uria[] = "<sip:147.175.191.210:5060;lr>";
+		std::string rrip = getRecordRoute();
+		pjsip_rr_hdr* rrhdr = pjsip_rr_hdr_create(global.pool);
+		pjsip_uri* lruri = pjsip_parse_uri(global.pool, (char*)rrip.c_str(), rrip.length(), 0);
+		rrhdr->name_addr.uri = lruri;
+		pjsip_msg_add_hdr(tdata->msg, (pjsip_hdr*)rrhdr);
 		insertAccount(contact->uri, rdata->pkt_info.src_port, rdata->pkt_info.src_name);
 		pjsip_endpt_send_response2(global.endpt, rdata, tdata, nullptr, nullptr);
 		return PJ_TRUE;
@@ -205,9 +171,16 @@ static pj_bool_t onRequestReceive(pjsip_rx_data* rdata)
 			return PJ_TRUE;
 		}
 
+		char uria[] = "<sip:147.175.191.210:5060;lr>";
+
+		std::string rrip = getRecordRoute();
+		pjsip_rr_hdr* rrhdr = pjsip_rr_hdr_create(global.pool);
+		pjsip_uri* lruri = pjsip_parse_uri(global.pool, (char*)rrip.c_str(), rrip.length(), 0);
+		rrhdr->name_addr.uri = lruri;
+		pjsip_msg_add_hdr(tdata->msg, (pjsip_hdr*)rrhdr);
 
 		/* Process routing */
-		//status = proxy_process_routing(tdata);
+		status = proxy_process_routing(tdata);
 		if (status != PJ_SUCCESS) {
 			
 			return PJ_TRUE;
@@ -364,10 +337,14 @@ static pj_bool_t onRequestReceive(pjsip_rx_data* rdata)
 
 static pj_bool_t onRequestResponse(pjsip_rx_data* rdata)
 {
+
 	pjsip_tx_data* tdata;
 	pjsip_response_addr res_addr;
 	pjsip_via_hdr* hvia;
 	pj_status_t status;
+	
+
+	//pjsip_hdr* fvia = pjsip_msg_find_hdr(rdata->msg_info.msg, PJSIP_H_VIA, NULL);
 
 	/* Create response to be forwarded upstream (Via will be stripped here) */
 	status = pjsip_endpt_create_response_fwd(global.endpt, rdata, 0, &tdata);
@@ -375,6 +352,13 @@ static pj_bool_t onRequestResponse(pjsip_rx_data* rdata)
 		
 		return PJ_TRUE;
 	}
+
+	char uria[] = "<sip:147.175.191.210:5060;lr>";
+	std::string rrip = getRecordRoute();
+	pjsip_rr_hdr* rrhdr = pjsip_rr_hdr_create(global.pool);
+	pjsip_uri* lruri = pjsip_parse_uri(global.pool, (char*)rrip.c_str(), rrip.length(), 0);
+	rrhdr->name_addr.uri = lruri;
+	pjsip_msg_add_hdr(tdata->msg, (pjsip_hdr*)rrhdr);
 
 
 	/* Get topmost Via header */
@@ -396,11 +380,15 @@ static pj_bool_t onRequestResponse(pjsip_rx_data* rdata)
 		/* Someone has messed up our Via header! */
 		res_addr.dst_host.addr.host = hvia->sent_by.host;
 	}
-
+	//hvia->sent_by.port = 5060;
+	
 	/* Destination port is the rpot */
 	if (hvia->rport_param != 0 && hvia->rport_param != -1)
+	{
 		res_addr.dst_host.addr.port = hvia->rport_param;
-
+		
+	}
+	
 	if (res_addr.dst_host.addr.port == 0) {
 		/* Ugh, original sender didn't put rport!
 		 * At best, can only send the response to the port in Via.
@@ -467,6 +455,7 @@ ProxyServer::ProxyServer()
 	//Initialize stateful proxy
 	status |= pjsip_endpt_register_module(global.endpt, &stateful_proxy_module);
 	status |= pjsip_endpt_register_module(global.endpt, &mod_tu);
+	status = pjsip_endpt_register_module(global.endpt, &logger);
 
 	PJ_LOG(3, (THIS_FILE, "Proxy started, listening on port %d", global.port));
 	PJ_LOG(3, (THIS_FILE, "Local host aliases:"));
@@ -527,14 +516,6 @@ pj_status_t ProxyServer::initProxy()
 	return PJ_SUCCESS;
 }
 
-int ProxyServer::worker_thread(void* ptr)
-{
-	pj_time_val delay = { 0, 10 };
-	PJ_UNUSED_ARG(ptr);
-
-
-	return 0;
-}
 
 
 
@@ -807,12 +788,18 @@ static void tu_on_tsx_state(pjsip_transaction* tsx, pjsip_event* event)
 			/* Create response to be forwarded upstream
 			 * (Via will be stripped here)
 			 */
-			status = pjsip_endpt_create_response_fwd(global.endpt, rdata, 0,
-				&tdata);
+			status = pjsip_endpt_create_response_fwd(global.endpt, rdata, 0,&tdata);
 		if (status != PJ_SUCCESS) {
 			
 			return;
 		}
+		char uria[] = "<sip:147.175.191.210:5060;lr>";
+		std::string rrip = getRecordRoute();
+		pjsip_rr_hdr* rrhdr = pjsip_rr_hdr_create(global.pool);
+		pjsip_uri* lruri = pjsip_parse_uri(global.pool, (char*)rrip.c_str(), rrip.length(), 0);
+		rrhdr->name_addr.uri = lruri;
+		pjsip_msg_add_hdr(tdata->msg, (pjsip_hdr*)rrhdr);
+
 
 		/* Get topmost Via header of the new response */
 		hvia = (pjsip_via_hdr*)pjsip_msg_find_hdr(tdata->msg, PJSIP_H_VIA,
