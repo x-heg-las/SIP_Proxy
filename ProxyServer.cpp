@@ -521,13 +521,6 @@ ProxyServer::~ProxyServer()
 	pj_shutdown();
 }
 
-pj_status_t ProxyServer::initOptions()
-{
-	
-
-	return PJ_SUCCESS;
-}
-
 //Inserts rr header
 
 static void proxy_postprocess(pjsip_tx_data* tdata)
